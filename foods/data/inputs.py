@@ -2,14 +2,21 @@ import pandas as pd
 import re
 
 import nltk
-from nltk.stem import SnowballStemmer, WordNetLemmatizer 
+from nltk.stem import SnowballStemmer, WordNetLemmatizer
 from nltk.corpus import stopwords, wordnet
 from sklearn.model_selection import train_test_split
 
 from foods.settings import intermediate, train_formated, dev_formated, source, food_data
 from foods.data.augmentation import load_augmentation
 
-def prepare_train_dev(dev_size = 0.2, number_of_augmentation = 9000, clean_txt = True, stem_option = False, rem_stop_option = False):
+
+def prepare_train_dev(
+    dev_size=0.2,
+    number_of_augmentation=9000,
+    clean_txt=True,
+    stem_option=False,
+    rem_stop_option=False,
+):
     """Prepare training and development data.
 
     Parameters
@@ -28,61 +35,69 @@ def prepare_train_dev(dev_size = 0.2, number_of_augmentation = 9000, clean_txt =
     Returns
     -------
     Transformed datasets
-    """ 
+    """
 
-    df = pd.read_table(f'./{source}/{food_data}', header=None).rename(columns = {0:'text', 1:'label'})[['label', 'text']]
+    df = pd.read_table(f"./{source}/{food_data}", header=None).rename(
+        columns={0: "text", 1: "label"}
+    )[["label", "text"]]
 
     if clean_txt:
-        df = preprocess(df, stem_option = stem_option, rem_stop_option = rem_stop_option)
-    df_train, df_dev = train_test_split(df, test_size = dev_size, random_state = 42, stratify = df['label'])
-    df_dev.set_index('label').to_csv(f'./{intermediate}/{dev_formated}')
+        df = preprocess(df, stem_option=stem_option, rem_stop_option=rem_stop_option)
+    df_train, df_dev = train_test_split(
+        df, test_size=dev_size, random_state=42, stratify=df["label"]
+    )
+    df_dev.set_index("label").to_csv(f"./{intermediate}/{dev_formated}")
 
     if number_of_augmentation > 0:
-        df_aug = load_augmentation(number_of_samples = number_of_augmentation)
+        df_aug = load_augmentation(number_of_samples=number_of_augmentation)
         if clean_txt:
-            df_aug = preprocess(df_aug, stem_option = stem_option, rem_stop_option = rem_stop_option)
+            df_aug = preprocess(
+                df_aug, stem_option=stem_option, rem_stop_option=rem_stop_option
+            )
         df_train = pd.concat([df_train, df_aug])
 
-    df_train.set_index('label').to_csv(f'./{intermediate}/{train_formated}')
+    df_train.set_index("label").to_csv(f"./{intermediate}/{train_formated}")
 
     return df_train, df_dev, df
 
 
-def preprocess(df_data, stem_option = False, rem_stop_option = False):
+def preprocess(df_data, stem_option=False, rem_stop_option=False):
     # Convert to lowercase
     df_data = df_data.apply(lambda x: x.astype(str).str.lower())
 
-    for col in ['text']:
-        # Replace special word 
-        df_data[col] = df_data[col].apply(lambda x:special_text2word(x))
-        
-        # Expand contraction 
-        df_data[col] = df_data[col].apply(lambda x:decontracted(x))
+    for col in ["text"]:
+        # Replace special word
+        df_data[col] = df_data[col].apply(lambda x: special_text2word(x))
+
+        # Expand contraction
+        df_data[col] = df_data[col].apply(lambda x: decontracted(x))
 
         # Remove punctuation
-        punc_symbol = re.compile(r'[^\w\s]+')
-        df_data[col] = df_data[col].apply(lambda x:punc_symbol.sub(' ', x))
+        punc_symbol = re.compile(r"[^\w\s]+")
+        df_data[col] = df_data[col].apply(lambda x: punc_symbol.sub(" ", x))
 
         # Wordnet Lemmatizer with appropriate POS tag
         lemmatizer = WordNetLemmatizer()
-        df_data[col] = df_data[col].apply(lambda x:lemma(x, lemmatizer))
-        
+        df_data[col] = df_data[col].apply(lambda x: lemma(x, lemmatizer))
+
         # Stem
         if stem_option:
             stemmer = SnowballStemmer("english", ignore_stopwords=True)
-            df_data[col] = df_data[col].apply(lambda x:stem(x, stemmer))
+            df_data[col] = df_data[col].apply(lambda x: stem(x, stemmer))
 
         # Remove stopwords
         if rem_stop_option:
-            stop_words = stopwords.words('english')
-            df_data[col] = df_data[col].apply(lambda x:remstop(x, stop_words))
+            stop_words = stopwords.words("english")
+            df_data[col] = df_data[col].apply(lambda x: remstop(x, stop_words))
 
     return df_data
 
+
 def special_text2word(phrase):
-    for key,value in special_word_dict.items():
+    for key, value in special_word_dict.items():
         phrase = re.sub(key, value, phrase)
     return phrase
+
 
 special_word_dict = {
     "the us ": "the america",
@@ -101,32 +116,41 @@ special_word_dict = {
     "e\.g\.": "eg",
     "\$": " dollar ",
     "\%": " percent ",
-    "\&": " and "}
-    
+    "\&": " and ",
+}
+
+
 def decontracted(phrase):
     # general
-    for key,value in CONTRACTION_MAP.items():
+    for key, value in CONTRACTION_MAP.items():
         phrase = re.sub(key, value, phrase)
 
-    #special
+    # special
     phrase = re.sub(r"\'s", "", phrase)
 
     return phrase
 
+
 def get_wordnet_pos(word):
     """Map POS tag to first character lemmatize() accepts"""
     tag = nltk.pos_tag([word])[0][1][0].upper()
-    tag_dict = {"J": wordnet.ADJ,
-                "N": wordnet.NOUN,
-                "V": wordnet.VERB,
-                "R": wordnet.ADV}
+    tag_dict = {
+        "J": wordnet.ADJ,
+        "N": wordnet.NOUN,
+        "V": wordnet.VERB,
+        "R": wordnet.ADV,
+    }
     return tag_dict.get(tag, wordnet.NOUN)
+
 
 def lemma(text, lemmatizer):
     text = str(text).split()
-    lemmatized_words = [lemmatizer.lemmatize(word, get_wordnet_pos(word)) for word in text]
+    lemmatized_words = [
+        lemmatizer.lemmatize(word, get_wordnet_pos(word)) for word in text
+    ]
     text = " ".join(lemmatized_words)
     return text
+
 
 def stem(text, stemmer):
     text = str(text).split()
@@ -134,11 +158,13 @@ def stem(text, stemmer):
     text = " ".join(stemmed_words)
     return text
 
+
 def remstop(text, stop_words):
     text = str(text).split()
     remstop_words = [word for word in text if word not in stop_words]
     text = " ".join(remstop_words)
     return text
+
 
 CONTRACTION_MAP = {
     "ain't": "is not",
@@ -263,5 +289,5 @@ CONTRACTION_MAP = {
     "you'll": "you will",
     "you'll've": "you will have",
     "you're": "you are",
-    "you've": "you have"
+    "you've": "you have",
 }

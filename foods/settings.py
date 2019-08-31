@@ -1,5 +1,5 @@
-source = 'source'
-intermediate = 'intermediate'
-food_data = 'train.txt'
-train_formated = 'train_formated.csv'
-dev_formated = 'dev_formated.csv'
+source = "source"
+intermediate = "intermediate"
+food_data = "train.txt"
+train_formated = "train_formated.csv"
+dev_formated = "dev_formated.csv"

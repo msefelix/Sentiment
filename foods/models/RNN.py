@@ -1,11 +1,27 @@
 import pandas as pd
-from fastai.text import (TextClasDataBunch, text_classifier_learner, AWD_LSTM, TextLMDataBunch, language_model_learner)
+from fastai.text import (
+    TextClasDataBunch,
+    text_classifier_learner,
+    AWD_LSTM,
+    TextLMDataBunch,
+    language_model_learner,
+)
 from foods.settings import intermediate
-magic_number = 2.6**4 
+
+magic_number = 2.6 ** 4
 
 
-def RNN_fastai(path, file_name, version, lm_cycles=8, classifier_cycles=10, text_cols='text', 
-    label_cols='label', drop_mult=0.2, encoder_exists = False):
+def RNN_fastai(
+    path,
+    file_name,
+    version,
+    lm_cycles=8,
+    classifier_cycles=10,
+    text_cols="text",
+    label_cols="label",
+    drop_mult=0.2,
+    encoder_exists=False,
+):
     """Train (and save) a sentiment predictor with transfer learning. The base model is a FastAi language model
         (LSTM RNN trained on the Wikitext-103 dataset)
 
@@ -36,28 +52,53 @@ def RNN_fastai(path, file_name, version, lm_cycles=8, classifier_cycles=10, text
         Trained sentiment predictor
     """
     # QA on inputs
-    if (lm_cycles<5) | (classifier_cycles<5):
+    if (lm_cycles < 5) | (classifier_cycles < 5):
         print("training cyles too small. Aborting...")
         return
 
     # Initiate and tune language model
     if not encoder_exists:
-        learner_lm, data_lm = initiate_learner(path, file_name, data_lm = None, encoder_name = None, 
-                                            text_cols=text_cols, label_cols=label_cols, drop_mult = drop_mult)
+        learner_lm, data_lm = initiate_learner(
+            path,
+            file_name,
+            data_lm=None,
+            encoder_name=None,
+            text_cols=text_cols,
+            label_cols=label_cols,
+            drop_mult=drop_mult,
+        )
 
-        learner_lm = tune_save_learner(learner_lm, 0.1, 0.003, lm_cycles, f'{version}_RNN_lm')
+        learner_lm = tune_save_learner(
+            learner_lm, 0.1, 0.003, lm_cycles, f"{version}_RNN_lm"
+        )
 
     # Initiate and tune classifier
-    learner_c, data_lm = initiate_learner(path, file_name, data_lm = data_lm, 
-                                            encoder_name = f'{version}_RNN_lm', 
-                                            text_cols=text_cols, label_cols=label_cols, drop_mult = drop_mult)
+    learner_c, data_lm = initiate_learner(
+        path,
+        file_name,
+        data_lm=data_lm,
+        encoder_name=f"{version}_RNN_lm",
+        text_cols=text_cols,
+        label_cols=label_cols,
+        drop_mult=drop_mult,
+    )
 
-    learner_c = tune_save_learner(learner_c, 0.1, 0.001, classifier_cycles, f'{version}_RNN_classifier')
-  
+    learner_c = tune_save_learner(
+        learner_c, 0.1, 0.001, classifier_cycles, f"{version}_RNN_classifier"
+    )
+
     return learner_c
 
 
-def initiate_learner(path, file_name, data_lm = None, encoder_name = None, text_cols='text', label_cols='label', drop_mult = 0.2):
+def initiate_learner(
+    path,
+    file_name,
+    data_lm=None,
+    encoder_name=None,
+    text_cols="text",
+    label_cols="label",
+    drop_mult=0.2,
+):
     """Initiate a sentimental classifer or a language model using the text dataset under path/file_name.
 
     Parameters
@@ -84,18 +125,27 @@ def initiate_learner(path, file_name, data_lm = None, encoder_name = None, text_
     """
     # Initiate a sentimental classifer on top of the pre-tuned language model
     if encoder_name:
-        data_clas = TextClasDataBunch.from_csv(path, file_name, text_cols=text_cols, label_cols=label_cols,
-                                            vocab=data_lm.train_ds.vocab, bs=32)
+        data_clas = TextClasDataBunch.from_csv(
+            path,
+            file_name,
+            text_cols=text_cols,
+            label_cols=label_cols,
+            vocab=data_lm.train_ds.vocab,
+            bs=32,
+        )
         learner = text_classifier_learner(data_clas, AWD_LSTM, drop_mult=drop_mult)
         learner.load_encoder(encoder_name)
-    
+
     # Initiate a language model to tune. The language model is based on fastai's RNN model trained on Wikitext 103 dataset,
     # which predicts the next word for any string inputs
     else:
-        data_lm = TextLMDataBunch.from_csv(path, file_name, text_cols=text_cols, label_cols=label_cols) 
+        data_lm = TextLMDataBunch.from_csv(
+            path, file_name, text_cols=text_cols, label_cols=label_cols
+        )
         learner = language_model_learner(data_lm, AWD_LSTM, drop_mult=drop_mult)
 
     return learner, data_lm
+
 
 def tune_save_learner(learner, initial_LR, onging_LR, training_cycles, learner_name):
     """"
@@ -121,31 +171,35 @@ def tune_save_learner(learner, initial_LR, onging_LR, training_cycles, learner_n
     # Tune the last layer
     print(f"Train the last layer of the model...")
     learner.fit_one_cycle(1, initial_LR)
-     
+
     # Tune the last 2-3 layers
-    for i in range(2, 4): #FIXME check the number of layers in the RNN
+    for i in range(2, 4):  # FIXME check the number of layers in the RNN
         print(f"Train the last {i} layers of the model...")
         learner.freeze_to(-i)
-        learner.fit_one_cycle(1, slice(onging_LR/magic_number, onging_LR), moms=(0.8,0.7))
+        learner.fit_one_cycle(
+            1, slice(onging_LR / magic_number, onging_LR), moms=(0.8, 0.7)
+        )
 
     # Tune all layers
     learner.unfreeze()
-    for i in range(training_cycles-4):
+    for i in range(training_cycles - 4):
         print(f"Train the all layers of the model: cycle {i}")
-        learner.fit_one_cycle(1, slice(onging_LR/magic_number, onging_LR), moms=(0.8,0.7))
+        learner.fit_one_cycle(
+            1, slice(onging_LR / magic_number, onging_LR), moms=(0.8, 0.7)
+        )
 
-        if learner_name.split('_')[-1] == 'lm':
+        if learner_name.split("_")[-1] == "lm":
             learner.save_encoder(f"{learner_name}_cycle_{i}")
-        elif learner_name.split('_')[-1] == 'classifier':
-            learner.export(f'export_all_{i}.pkl')
+        elif learner_name.split("_")[-1] == "classifier":
+            learner.export(f"export_all_{i}.pkl")
         else:
-            print('Save method not defined, learner not saved')
+            print("Save method not defined, learner not saved")
 
-    if learner_name.split('_')[-1] == 'lm':
+    if learner_name.split("_")[-1] == "lm":
         learner.save_encoder(f"{learner_name}")
-    elif learner_name.split('_')[-1] == 'classifier':
-        learner.export(f'export_all.pkl')
+    elif learner_name.split("_")[-1] == "classifier":
+        learner.export(f"export_all.pkl")
     else:
-        print('Save method not defined, learner not saved')
+        print("Save method not defined, learner not saved")
 
     return learner
